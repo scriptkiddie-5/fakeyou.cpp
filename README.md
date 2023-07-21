@@ -1,5 +1,13 @@
 # FakeYou CPP (WIP)
 
+## What can it do
+- Authentication
+- Profile fetching
+- TTS model fetching
+- Rate tts models
+- TTS synthesis
+- Download tts synthesis's
+
 ## Requirements
 [cURL](https://curl.se/)
 
@@ -36,3 +44,4 @@ int main()
 	getchar();
 	return 0;
 }
+```
