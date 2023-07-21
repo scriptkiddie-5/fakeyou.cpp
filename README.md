@@ -2,6 +2,7 @@
 
 ## Requirements
 [cURL](https://curl.se/)
+[nlohmann/json](https://github.com/nlohmann/json)
 
 ## Example Usage
 ```cpp
