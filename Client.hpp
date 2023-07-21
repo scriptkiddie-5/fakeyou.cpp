@@ -5,34 +5,27 @@
 
 #include "HTTP.hpp"
 #include "Globals.hpp"
-#include "TTSModel.hpp"
+#include "Profile.hpp"
+#include "TTS.hpp"
+#include "VTV.hpp"
 
 namespace FakeYou {
 	class Client {
 	private:
-		std::time_t lastRequest;
-		enum class APISlotState {
-			Idle,
-			SendingRequest,
-			WaitingForResponse
-		};
-		APISlotState slot1;
-		APISlotState slot2;
-
-		std::string usernameOrEmail;
+		std::string username;
 		std::string password;
 	public:
-		bool Login(std::string usernameOrEmail, std::string password)
+		bool Login(std::string username, std::string password)
 		{
-			this->usernameOrEmail = usernameOrEmail;
+			this->username = username;
 			this->password = password;
 
-			std::string data = "{\"username_or_email\":\"" + usernameOrEmail + "\",\"password\":\"" + password + "\"}";
+			std::string data = "{\"username_or_email\":\"" + username + "\",\"password\":\"" + password + "\"}";
 			std::map<std::string, std::string> headers = {
 				{ "Content-Type", "application/json" },
 				{ "Accept", "application/json" }
 			};
-			auto res = http::request(baseURL + "/login", "POST", headers, data);
+			http::HttpResponse res = http::request(baseURL + "/login", "POST", headers, data);
 
 			for (const auto& header : res.headers) {
 				if (header.first == "set-cookie") {
@@ -52,97 +45,93 @@ namespace FakeYou {
 				}
 			}
 
-			nlohmann::json body = nlohmann::json::parse(res.body);
-			if (body["success"])
-				return true;
-			else
-			{
-				authCookie = "";
-				return false;
+			try {
+				nlohmann::json body = nlohmann::json::parse(res.body);
+				if (body["success"])
+					return true;
 			}
+			catch (const std::exception e) {  }
+			authCookie = "";
+			return false;
 		}
 		bool Logout()
 		{
-			this->usernameOrEmail = "";
+			this->username = "";
 			this->password = "";
 
-			auto res = http::request(baseURL + "/logout", "POST");
+			http::HttpResponse res = http::request(baseURL + "/logout", "POST");
 
 			authCookie = "";
 
 			nlohmann::json body = nlohmann::json::parse(res.body);
 			return body["success"];
 		}
-
-		TTSModel* GetModelByToken(std::string token)
+		Profile* FetchProfile(std::string username)
 		{
-			auto models = GetModels();
-			for (int i = 0; i < models.size(); i++) {
-				if (models[i]->modelToken == token)
-					return models[i];
-			}
-
-			return nullptr;
-		}
-		TTSModel* GetModelByTitle(std::string title)
-		{
-			auto models = GetModels();
-			for (int i = 0; i < models.size(); i++) {
-				if (models[i]->title == title)
-					return models[i];
-			}
-
-			return nullptr;
-		}
-		std::vector<TTSModel*> GetModels()
-		{
-			std::vector<TTSModel*> models;
-
 			std::map<std::string, std::string> headers = {
-				{ "Content-Type", "application/json" },
-				{ "Accept", "application/json" },
-				{ "Credentials", "include" },
-				{ "Cookies", "session=" + authCookie },
-			};
-			auto res = http::request(baseURL + "/tts/list", "GET", headers);
-			nlohmann::json body = nlohmann::json::parse(res.body);
+                { "Content-Type", "application/json" },
+                { "Accept", "application/json" }
+            };
+
+            if (authCookie.size())
+                headers.insert({
+                    { "Credentials", "include" },
+                    { "Cookie", std::string("session=" + authCookie) }
+                });
+
+			http::HttpResponse res = http::request(baseURL + "/user/" + username + "/profile", "GET", headers);
 
 			try {
-				for (const auto& modelData : body["models"]) {
-					TTSModel* model = new TTSModel;
-					model->modelToken = modelData["model_token"];
-					model->ttsModelType = modelData["tts_model_type"];
-					model->creatorUserToken = modelData["creator_user_token"];
-					model->creatorUsername = modelData["creator_username"];
-					model->creatorDisplayName = modelData["creator_display_name"];
-					model->creatorGravatarHash = modelData["creator_gravatar_hash"];
-					model->title = modelData["title"];
-					model->ietfLanguageTag = modelData["ietf_language_tag"];
-					model->ietfPrimaryLanguageSubtag = modelData["ietf_primary_language_subtag"];
-					model->isFrontPageFeatured = modelData["is_front_page_featured"];
-					model->isTwitchFeatured = modelData["is_twitch_featured"];
-					model->maybeSuggestedUniqueBotCommand = modelData["maybe_suggested_unique_bot_command"];
-					model->creatorSetVisibility = modelData["creator_set_visibility"];
-					model->userRatings.positiveCount = modelData["user_ratings"]["positive_count"];
-					model->userRatings.negativeCount = modelData["user_ratings"]["negative_count"];
-					model->userRatings.totalCount = modelData["user_ratings"]["total_count"];
+				nlohmann::json json = nlohmann::json::parse(res.body);
+				Profile* profile = new Profile;
 
-					// Decode the category_tokens array
-					for (const auto& category : modelData["category_tokens"]) {
-						model->categoryTokens.push_back(category);
-					}
+				// Assign values from JSON to the Profile struct
+				profile->userToken = json["user"]["user_token"];
+				profile->username = json["user"]["username"];
+				profile->displayName = json["user"]["display_name"];
+				profile->emailGravatarHash = json["user"]["email_gravatar_hash"];
+				profile->defaultAvatarIndex = json["user"]["default_avatar_index"];
+				profile->defaultAvatarColorIndex = json["user"]["default_avatar_color_index"];
+				profile->profileMarkdown = json["user"]["profile_markdown"];
+				profile->profileRenderedHtml = json["user"]["profile_rendered_html"];
+				profile->userRoleSlug = json["user"]["user_role_slug"];
+				profile->disableGravatar = json["user"]["disable_gravatar"];
+				profile->preferredTTSResultVisibility = json["user"]["preferred_tts_result_visibility"];
+				profile->preferredW2LResultVisibility = json["user"]["preferred_w2l_result_visibility"];
+				profile->discordUsername = json["user"]["discord_username"].is_null() ? "" : json["user"]["discord_username"];
+				profile->twitchUsername = json["user"]["twitch_username"].is_null() ? "" : json["user"]["twitch_username"];
+				profile->twitterUsername = json["user"]["twitter_username"].is_null() ? "" : json["user"]["twitter_username"];
+				profile->patreonUsername = json["user"]["patreon_username"].is_null() ? "" : json["user"]["patreon_username"];
+				profile->githubUsername = json["user"]["github_username"].is_null() ? "" : json["user"]["github_username"];
+				profile->cashappUsername = json["user"]["cashapp_username"].is_null() ? "" : json["user"]["cashapp_username"];
+				profile->websiteUrl = json["user"]["website_url"].is_null() ? "" : json["user"]["website_url"];
 
-					model->createdAt = modelData["created_at"];
-					model->updatedAt = modelData["updated_at"];
-
-					models.push_back(model);
+				// Parse and assign badge data
+				for (const auto& badgeJson : json["user"]["badges"]) {
+					Profile::Badge badge;
+					badge.slug = badgeJson["slug"];
+					badge.title = badgeJson["title"];
+					badge.description = badgeJson["description"];
+					badge.imageUrl = badgeJson["image_url"];
+					badge.grantedAt = badgeJson["granted_at"];
+					profile->badges.push_back(badge);
 				}
-			}
-			catch (const std::exception& e) {
-				std::cerr << "Error decoding JSON: " << e.what() << std::endl;
-			}
 
-			return models;
+				profile->createdAt = json["user"]["created_at"].is_null() ? "" : json["user"]["created_at"];
+				profile->maybeModeratorFields = json["user"]["maybe_moderator_fields"].is_null() ? "" : json["user"]["maybe_moderator_fields"];
+
+				return profile;
+			}
+			catch (const std::exception e) {  }
+
+			return nullptr;
 		}
+		Profile* FetchMyProfile()
+		{
+			return FetchProfile(this->username);
+		}
+
+		TTS* tts;
+		VTV* vtv;
 	};
 }

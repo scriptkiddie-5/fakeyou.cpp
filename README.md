@@ -3,26 +3,36 @@
 ## Requirements
 [cURL](https://curl.se/)
 
+[nlohmann/json](https://github.com/nlohmann/json)
+
 ## Example Usage
 ```cpp
 #include "Client.hpp"
 
 int main()
 {
-  // Initialize client instance
-  FakeYou::Client client;
+	FakeYou::Client* client = new FakeYou::Client(); // initialize a fakeyou client
+	client->Login("username", "password"); // username and password you signed up with, don't call this function if you want to be represented as anonymous
 
-  // You can choose not do do this and be represented as an anonymous user
-  client.Login("<username>", "<password>"); 
+	FakeYou::Profile* myProfile = client->FetchMyProfile(); // important: this will return nullptr if you're not logged in
+	FakeYou::Profile* someProfile = client->FetchProfile("joe_mama"); // fetch a profile by username
 
-  // Fetch a model by token
-  FakeYou::TTSModel* model = client.GetModelByToken("TM:4t2a9skxk1v8");
-  // Infer text to speech
-  FakeYou::TTSResult* result = model->Infer("I have just contracted aids from my stuffed animal pikachu.");
-  if (result != nullptr)
-    // Give converted text to speech url
-    std::cout << result->url;
+	FakeYou::TTSModel* modelByToken = client->tts->GetModelByToken("TM:tzjnqpmep7tn"); // fetch tts model by token
+	FakeYou::TTSModel* modelByTitle = client->tts->GetModelByTitle("Mike Ehrmantraut"); // fetch tts model by title
 
-  getchar();
-  return 0;
+	modelByToken->Refetch(); // you can refetch a model to ensure you have up-to-date information
+
+	FakeYou::TTSModel::Rating modelByTokenRating = modelByToken->GetMyRating(); // the logged in user's rating
+	bool good = modelByToken->SetMyRating(FakeYou::TTSModel::Rating::Positive); // set the logged in user's rating
+
+	std::cout << "Username is " << myProfile->username << std::endl;
+	std::cout << "Synthesizing" << std::endl;
+
+	FakeYou::TTSResult* result = modelByToken->Inference("I'm extremely tired, god help me."); // the fun part, synthesize some text using your model!
+	result->Download("./", "pimento_cheese"); // download the .wav to a path with a name
+
+	std::cout << "Synthesized and downloaded: " << result->url << std::endl;
+
+	getchar();
+	return 0;
 }
