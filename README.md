@@ -1,17 +1,15 @@
-# FakeYou CPP (WIP)
+# fakeyou.cpp
 
-## What can it do
+## Features
 - Authentication
-- Profile fetching
-- TTS model fetching
-- Rate tts models
-- TTS synthesis
-- Download tts synthesis's
+- Ratelimit safe
+- Fetch profile data
+- TTS functionality
+- View the tts/w2l leaderboard
 
 ## Requirements
-[cURL](https://curl.se/)
-
-[nlohmann/json](https://github.com/nlohmann/json)
+- [cURL](https://curl.se/)
+- [nlohmann/json](https://github.com/nlohmann/json)
 
 ## Example Usage
 ```cpp
@@ -19,29 +17,38 @@
 
 int main()
 {
-	FakeYou::Client* client = new FakeYou::Client(); // initialize a fakeyou client
-	client->Login("username", "password"); // username and password you signed up with, don't call this function if you want to be represented as anonymous
+	FakeYou::Client* client = new FakeYou::Client; // initialize a fakeyou client
+	
+	// - Authentication
+	
+	client->Login("<username>", "<password>"); // username and password you signed up with
+	
+	client->Logout(); // logout at anytime to go back to being represented as anonymous
 
-	FakeYou::Profile* myProfile = client->FetchMyProfile(); // important: this will return nullptr if you're not logged in
-	FakeYou::Profile* someProfile = client->FetchProfile("joe_mama"); // fetch a profile by username
+	// - Miscellaneous
 
-	FakeYou::TTSModel* modelByToken = client->tts->GetModelByToken("TM:tzjnqpmep7tn"); // fetch tts model by token
-	FakeYou::TTSModel* modelByTitle = client->tts->GetModelByTitle("Mike Ehrmantraut"); // fetch tts model by title
+	std::vector<FakeYou::LeaderboardEntry*> ttsLeaderboard = client->FetchLeaderboard()->ttsLeaderboard; // returns a sloppy user, but you can refetch the user by username you're provided
+	std::vector<FakeYou::LeaderboardEntry*> w2lLeaderboard = client->FetchLeaderboard()->w2lLeaderboard; // returns a sloppy user, but you can refetch the user by username you're provided
+	FakeYou::Profile* topProfile = client->FetchProfile(ttsLeaderboard[0]->username);
 
-	modelByToken->Refetch(); // you can refetch a model to ensure you have up-to-date information
+	std::cout << topProfile->patreonUsername << std::endl;
 
-	FakeYou::TTSModel::Rating modelByTokenRating = modelByToken->GetMyRating(); // the logged in user's rating
-	bool good = modelByToken->SetMyRating(FakeYou::TTSModel::Rating::Positive); // set the logged in user's rating
+	// - Text to speech
 
-	std::cout << "Username is " << myProfile->username << std::endl;
-	std::cout << "Synthesizing" << std::endl;
+	FakeYou::TTSModel* modelByTitle = client->tts->GetModelByTitle("Saul Goodman"); // fetch a model object by title
+	FakeYou::TTSModel* modelByToken = client->tts->GetModelByToken("TM:b8efnnxdx14m"); // you can also fetch by token
+	std::vector<FakeYou::TTSModel*> models = client->tts->GetModels(); // or just fetch them all
 
-	FakeYou::TTSResult* result = modelByToken->Inference("I'm extremely tired, god help me."); // the fun part, synthesize some text using your model!
-	result->Download("./", "pimento_cheese"); // download the .wav to a path with a name
+	FakeYou::TTSResult* result = modelByTitle->Inference("I'm over here stroking my dick I got lotion on my dick right now I'm just stroking my shit I'm horny as fuck man I'm a freak man like");
 
-	std::cout << "Synthesized and downloaded: " << result->url << std::endl;
+	std::cout << result->url << std::endl;
+	result->Download("./", "pimento_cheese_sandwich"); // Save the wav from the url file to disk
 
-	getchar();
 	return 0;
 }
+```
+
+## Compile with g++
+```
+g++ *.cpp -lcurl
 ```
