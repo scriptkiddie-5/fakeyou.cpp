@@ -83,6 +83,8 @@ namespace FakeYou {
 
                 // Step 3: Keep polling for job status
                 while (true) {
+                    enforceRateLimit();
+                    
                     std::string inferenceJobToken = body["inference_job_token"];
                     http::Response jobResponse = http::request(baseURL + "/tts/job/" + inferenceJobToken, "GET", headers);
                     nlohmann::json jobBody = nlohmann::json::parse(jobResponse.body);
@@ -104,9 +106,6 @@ namespace FakeYou {
                             return result;
                         }
                     }
-
-                    // Sleep for a second before polling again
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
                 }
             }
             catch (const std::exception e)
