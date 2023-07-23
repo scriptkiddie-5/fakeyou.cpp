@@ -1,4 +1,5 @@
 #pragma once
+
 #include <iostream>
 #include <string>
 #include <nlohmann/json.hpp>
@@ -6,8 +7,6 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
-
-#include "Client.hpp"
 
 namespace FakeYou {
 	struct Profile {
@@ -40,5 +39,9 @@ namespace FakeYou {
 		std::vector<Badge> badges;
 		std::string createdAt;
 		std::string maybeModeratorFields;
+
+		void Edit(Profile newProfile) {
+			*this = newProfile;
+		}
 	};
 }

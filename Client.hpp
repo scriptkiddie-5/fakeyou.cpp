@@ -1,11 +1,17 @@
 #pragma once
+
 #include <iostream>
 #include <string>
+#include <thread>
 #include <nlohmann/json.hpp>
+#include <deque>
+#include <chrono>
+#include <mutex>
 
 #include "HTTP.hpp"
 #include "Globals.hpp"
 #include "Profile.hpp"
+#include "Leaderboard.hpp"
 #include "TTS.hpp"
 #include "VTV.hpp"
 
@@ -17,6 +23,9 @@ namespace FakeYou {
 	public:
 		bool Login(std::string username, std::string password)
 		{
+			std::cout << "Logging in as " + username << std::endl;
+			enforceRateLimit();
+
 			this->username = username;
 			this->password = password;
 
@@ -25,7 +34,7 @@ namespace FakeYou {
 				{ "Content-Type", "application/json" },
 				{ "Accept", "application/json" }
 			};
-			http::HttpResponse res = http::request(baseURL + "/login", "POST", headers, data);
+			http::Response res = http::request(baseURL + "/login", "POST", headers, data);
 
 			for (const auto& header : res.headers) {
 				if (header.first == "set-cookie") {
@@ -48,38 +57,99 @@ namespace FakeYou {
 			try {
 				nlohmann::json body = nlohmann::json::parse(res.body);
 				if (body["success"])
+				{
+					std::cout << "Logged in as " + username << std::endl;
 					return true;
+				}
 			}
 			catch (const std::exception e) {  }
 			authCookie = "";
+			std::cout << "Unable to log in as " + username << std::endl;
 			return false;
 		}
+
 		bool Logout()
 		{
+			enforceRateLimit();
+
 			this->username = "";
 			this->password = "";
 
-			http::HttpResponse res = http::request(baseURL + "/logout", "POST");
+			http::Response res = http::request(baseURL + "/logout", "POST");
 
 			authCookie = "";
 
 			nlohmann::json body = nlohmann::json::parse(res.body);
 			return body["success"];
 		}
+
+		Leaderboard* FetchLeaderboard()
+		{
+			enforceRateLimit();
+
+			std::map<std::string, std::string> headers = {
+				{ "Content-Type", "application/json" },
+				{ "Accept", "application/json" }
+			};
+
+			http::Response res = http::request(baseURL + "/leaderboard", "GET", headers);
+
+			try {
+				nlohmann::json json = nlohmann::json::parse(res.body);
+				if (!json["success"]) {
+					return nullptr;
+				}
+
+				Leaderboard* leaderboard = new Leaderboard;
+
+				for (const auto& entryJson : json["tts_leaderboard"]) {
+					LeaderboardEntry* entry = new LeaderboardEntry;
+					entry->creatorUserToken = entryJson["creator_user_token"];
+					entry->username = entryJson["username"];
+					entry->displayName = entryJson["display_name"];
+					entry->gravatarHash = entryJson["gravatar_hash"];
+					entry->defaultAvatarIndex = entryJson["default_avatar_index"];
+					entry->defaultAvatarColorIndex = entryJson["default_avatar_color_index"];
+					entry->uploadedCount = entryJson["uploaded_count"];
+					leaderboard->ttsLeaderboard.push_back(entry);
+				}
+
+				for (const auto& entryJson : json["w2l_leaderboard"]) {
+					LeaderboardEntry* entry = new LeaderboardEntry;
+					entry->creatorUserToken = entryJson["creator_user_token"];
+					entry->username = entryJson["username"];
+					entry->displayName = entryJson["display_name"];
+					entry->gravatarHash = entryJson["gravatar_hash"];
+					entry->defaultAvatarIndex = entryJson["default_avatar_index"];
+					entry->defaultAvatarColorIndex = entryJson["default_avatar_color_index"];
+					entry->uploadedCount = entryJson["uploaded_count"];
+					leaderboard->w2lLeaderboard.push_back(entry);
+				}
+
+				return leaderboard;
+			}
+			catch (const std::exception) {  }
+
+			return nullptr;
+		}
+
 		Profile* FetchProfile(std::string username)
 		{
+			enforceRateLimit();
+
 			std::map<std::string, std::string> headers = {
-                { "Content-Type", "application/json" },
-                { "Accept", "application/json" }
-            };
+				{ "Content-Type", "application/json" },
+				{ "Accept", "application/json" }
+			};
 
-            if (authCookie.size())
-                headers.insert({
-                    { "Credentials", "include" },
-                    { "Cookie", std::string("session=" + authCookie) }
-                });
+			if (authCookie.size()) {
+				headers.insert({
+					{ "Credentials", "include" },
+					{ "Cookie", std::string("session=" + authCookie) }
+				});
+			}
 
-			http::HttpResponse res = http::request(baseURL + "/user/" + username + "/profile", "GET", headers);
+			http::Response res = http::request(baseURL + "/user/" + username + "/profile", "GET", headers);
 
 			try {
 				nlohmann::json json = nlohmann::json::parse(res.body);
@@ -126,8 +196,10 @@ namespace FakeYou {
 
 			return nullptr;
 		}
+
 		Profile* FetchMyProfile()
 		{
+			// already rate limit enforced
 			return FetchProfile(this->username);
 		}
 

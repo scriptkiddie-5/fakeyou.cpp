@@ -1,3 +1,5 @@
+#pragma once
+
 #include <curl/curl.h>
 #include <iostream>
 #include <string>
@@ -5,7 +7,7 @@
 #include <map>
 
 namespace http {
-    struct HttpResponse {
+    struct Response {
         long status_code;
         curl_slist* cookies;
         std::map<std::string, std::string> headers;
@@ -33,15 +35,64 @@ namespace http {
         return total_size;
     }
 
-    HttpResponse request(
+    std::vector<char> downloadWavFile(const std::string& url) {
+        std::vector<char> buffer;
+
+        CURL* curl = curl_easy_init();
+        if (curl) {
+            // Set the URL to download
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+
+            // Set the write function to save the downloaded data into the buffer
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, [](void* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+                size_t totalSize = size * nmemb;
+                std::vector<char>* buffer = static_cast<std::vector<char>*>(userdata);
+                buffer->insert(buffer->end(), static_cast<char*>(ptr), static_cast<char*>(ptr) + totalSize);
+                return totalSize;
+            });
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+
+            // Perform the download
+            CURLcode res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                std::cerr << "Failed to download the WAV file. Error: " << curl_easy_strerror(res) << std::endl;
+            }
+
+            // Clean up curl
+            curl_easy_cleanup(curl);
+        }
+        else {
+            std::cerr << "Failed to initialize curl." << std::endl;
+        }
+
+        return buffer;
+    }
+
+    std::string encode(const std::string data) {
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            std::cerr << "cURL initialization failed!" << std::endl;
+            return "";
+        }
+
+        char* encodedData = curl_easy_escape(curl, data.c_str(), static_cast<int>(data.length()));
+        std::string result(encodedData);
+        curl_free(encodedData);
+        curl_easy_cleanup(curl);
+
+        return result;
+    }
+
+    Response request(
         const std::string url, 
         const std::string method,
         const std::map<std::string, std::string> headers = {},
-        const std::string data = "") 
+        const std::string data = ""
+    )
     {
         CURL* curl;
         CURLcode res;
-        HttpResponse response;
+        Response response;
 
         curl = curl_easy_init();
         if (curl) {

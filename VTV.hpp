@@ -1,4 +1,5 @@
 #pragma once
+
 #include <iostream>
 #include <string>
 #include <nlohmann/json.hpp>
@@ -6,11 +7,17 @@
 #include <iomanip>
 #include <sstream>
 
-#include "Client.hpp"
+#include "Globals.hpp"
+#include "HTTP.hpp"
 
 namespace FakeYou {
 	class VTVModel {
     public:
+		void Inference()
+		{
+			
+		}
+
         std::string token;
         std::string modelType;
         std::string title;
@@ -51,6 +58,8 @@ namespace FakeYou {
 		}
 		std::vector<VTVModel*> GetModels()
 		{
+			enforceRateLimit();
+
 			std::vector<VTVModel*> models;
 
 			std::map<std::string, std::string> headers = {
@@ -64,7 +73,7 @@ namespace FakeYou {
                     { "Cookie", std::string("session=" + authCookie) }
                 });
 
-			http::HttpResponse res = http::request(baseURL + "/v1/voice_conversion/model_list", "GET", headers);
+			http::Response res = http::request(baseURL + "/v1/voice_conversion/model_list", "GET", headers);
 			nlohmann::json body = nlohmann::json::parse(res.body);
 
 			try {
@@ -90,7 +99,7 @@ namespace FakeYou {
 					models.push_back(model);
 				}
 			}
-			catch (const std::exception& e) {  }
+			catch (const std::exception) {  }
 
 			return models;
 		}

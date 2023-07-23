@@ -6,8 +6,10 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <thread>
 
-#include "Client.hpp"
+#include "Globals.hpp"
+#include "HTTP.hpp"
 
 namespace FakeYou {
     class TTSResult {
@@ -17,9 +19,9 @@ namespace FakeYou {
         bool Download(std::string filepath, std::string filename)
         {
             // Make an HTTP GET request to download the WAV file
-            http::HttpResponse response = http::request(this->url, "GET");
+            http::Response response = http::request(this->url, "GET");
 
-            std::string path = filepath + "\\" + filename + ".wav";
+            std::string path = filepath + "/" + filename + ".wav";
 
             // Save the downloaded WAV data to a local file
             std::ofstream file(path, std::ios::binary);
@@ -52,6 +54,8 @@ namespace FakeYou {
         };
 
         TTSResult* Inference(std::string text) {
+            enforceRateLimit();
+
             // Step 1: Send inference request
             std::map<std::string, std::string> headers = {
                 { "Content-Type", "application/json" },
@@ -65,7 +69,7 @@ namespace FakeYou {
                 });
 
             std::string data = "{\"tts_model_token\":\"" + this->modelToken + "\",\"uuid_idempotency_token\":\"" + GenerateUUIDV4() + "\",\"inference_text\":\"" + text + "\"}";
-            http::HttpResponse response = http::request(baseURL + "/tts/inference", "POST", headers, data);
+            http::Response response = http::request(baseURL + "/tts/inference", "POST", headers, data);
 
             try {
                 nlohmann::json body = nlohmann::json::parse(response.body);
@@ -80,7 +84,7 @@ namespace FakeYou {
                 // Step 3: Keep polling for job status
                 while (true) {
                     std::string inferenceJobToken = body["inference_job_token"];
-                    http::HttpResponse jobResponse = http::request(baseURL + "/tts/job/" + inferenceJobToken, "GET", headers);
+                    http::Response jobResponse = http::request(baseURL + "/tts/job/" + inferenceJobToken, "GET", headers);
                     nlohmann::json jobBody = nlohmann::json::parse(jobResponse.body);
                     // Check if the "error_message" field exists in the JSON object
                     if (jobBody.contains("error_message") && jobBody["error_message"].is_string()) {
@@ -118,6 +122,8 @@ namespace FakeYou {
             if (!authCookie.size())
                 return Rating::Unknown;
 
+            enforceRateLimit();
+
             std::map<std::string, std::string> headers = {
                 { "Content-Type", "application/json" },
                 { "Accept", "application/json" }
@@ -131,7 +137,7 @@ namespace FakeYou {
 
             try
             {
-                http::HttpResponse response = http::request(baseURL + "/v1/user_rating/view/tts_model/" + this->modelToken, "GET", headers);
+                http::Response response = http::request(baseURL + "/v1/user_rating/view/tts_model/" + this->modelToken, "GET", headers);
                 std::string rating = nlohmann::json::parse(response.body)["maybe_rating_value"];
                 if (rating == "positive")
                     return Rating::Positive;
@@ -151,6 +157,8 @@ namespace FakeYou {
         {
             if (!authCookie.size())
                 return false;
+
+            enforceRateLimit();
 
             std::string convertedRating = "neutral";
             if (rating == Rating::Positive)
@@ -172,7 +180,7 @@ namespace FakeYou {
             try 
             {
                 std::string data = "{\"entity_type\": \"tts_model\", \"entity_token\":\"" + this->modelToken + "\",\"rating_value\":\"" + convertedRating + "\"}";
-                http::HttpResponse response = http::request(baseURL + "/v1/user_rating/rate", "POST", headers, data);
+                http::Response response = http::request(baseURL + "/v1/user_rating/rate", "POST", headers, data);
                 return nlohmann::json::parse(response.body)["success"];
             }
             catch (const std::exception e) {  }
@@ -180,6 +188,8 @@ namespace FakeYou {
         }
         bool Refetch()
         {
+            enforceRateLimit();
+
             std::map<std::string, std::string> headers = {
                 { "Content-Type", "application/json" },
                 { "Accept", "application/json" }
@@ -191,7 +201,7 @@ namespace FakeYou {
                     { "Cookie", std::string("session=" + authCookie) }
                 });
 
-            http::HttpResponse res = http::request(baseURL + "/tts/list", "GET", headers);
+            http::Response res = http::request(baseURL + "/tts/list", "GET", headers);
             nlohmann::json body = nlohmann::json::parse(res.body);
 
             try {
@@ -254,39 +264,11 @@ namespace FakeYou {
         std::vector<std::string> categoryTokens;
         std::string createdAt;
         std::string updatedAt;
-    private:
-        std::string GenerateUUIDV4() {
-            // Generate a random number using a random device
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<uint32_t> dist(0, 15);
-
-            // Create a function to convert an integer to a hexadecimal character
-            auto to_hex = [](uint32_t value) -> char {
-                return "0123456789abcdef"[value];
-            };
-
-            std::stringstream ss;
-            for (int i = 0; i < 32; ++i) {
-                // Generate four random numbers to represent the 32 hexadecimal digits
-                uint32_t random_value = dist(gen);
-                ss << to_hex(random_value);
-            }
-
-            // Insert dashes to form the UUID v4 format
-            std::string uuid = ss.str();
-            uuid.insert(8, "-");
-            uuid.insert(13, "-");
-            uuid.insert(18, "-");
-            uuid.insert(23, "-");
-
-            return uuid;
-        }
     };
 
     class TTS {
     public:
-        TTSModel* GetModelByToken(std::string token)
+        static TTSModel* GetModelByToken(std::string token)
         {
             auto models = GetModels();
             for (int i = 0; i < models.size(); i++) {
@@ -298,7 +280,7 @@ namespace FakeYou {
 
             return nullptr;
         }
-        TTSModel* GetModelByTitle(std::string title)
+        static TTSModel* GetModelByTitle(std::string title)
         {
             auto models = GetModels();
             for (int i = 0; i < models.size(); i++) {
@@ -308,8 +290,10 @@ namespace FakeYou {
 
             return nullptr;
         }
-        std::vector<TTSModel*> GetModels()
+        static std::vector<TTSModel*> GetModels()
         {
+            enforceRateLimit();
+
             std::vector<TTSModel*> models;
 
             std::map<std::string, std::string> headers = {
@@ -323,7 +307,7 @@ namespace FakeYou {
                     { "Cookie", std::string("session=" + authCookie) }
                 });
 
-            http::HttpResponse res = http::request(baseURL + "/tts/list", "GET", headers);
+            http::Response res = http::request(baseURL + "/tts/list", "GET", headers);
             nlohmann::json body = nlohmann::json::parse(res.body);
 
             try {
